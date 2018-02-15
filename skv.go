@@ -37,8 +37,6 @@ var (
 	// ErrBadValue is returned when the value supplied to the Put method
 	// is nil.
 	ErrBadValue = errors.New("skv: bad value")
-
-	bucketName = []byte("kv")
 )
 
 // Open a key-value store. "path" is the full path to the database file, any
@@ -48,23 +46,31 @@ var (
 // Because of BoltDB restrictions, only one process may open the file at a
 // time. Attempts to open the file from another process will fail with a
 // timeout error.
-func Open(path string) (*KVStore, error) {
+func NewKVStore(path string) (*KVStore, error) {
 	opts := &bolt.Options{
 		Timeout: 50 * time.Millisecond,
 	}
-	if db, err := bolt.Open(path, 0640, opts); err != nil {
+
+	db, err := bolt.Open(path, 0640, opts)
+	if err != nil {
 		return nil, err
-	} else {
-		err := db.Update(func(tx *bolt.Tx) error {
-			_, err := tx.CreateBucketIfNotExists(bucketName)
-			return err
-		})
-		if err != nil {
-			return nil, err
-		} else {
-			return &KVStore{db: db}, nil
-		}
 	}
+
+	return &KVStore{db: db}, nil
+}
+
+// AddBucket creates a new bucket if it does not exist. AddBucket returns an
+// error, which needs to be checked.
+func (kvs *KVStore) addBucket(bucket string) error {
+	err := kvs.db.Update(func(tx *bolt.Tx) error {
+		_, err := tx.CreateBucketIfNotExists([]byte(bucket))
+		return err
+	})
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // Put an entry into the store. The passed value is gob-encoded and stored.
@@ -78,16 +84,21 @@ func Open(path string) (*KVStore, error) {
 //	    "emma":  101,
 //	}
 //	err := store.Put("key43", m)
-func (kvs *KVStore) Put(key string, value interface{}) error {
+func (kvs *KVStore) Put(bucket, key string, value interface{}) error {
 	if value == nil {
 		return ErrBadValue
 	}
+
+	if err := kvs.AddBucket(bucket); err != nil {
+		return err
+	}
+
 	var buf bytes.Buffer
 	if err := gob.NewEncoder(&buf).Encode(value); err != nil {
 		return nil
 	}
 	return kvs.db.Update(func(tx *bolt.Tx) error {
-		return tx.Bucket(bucketName).Put([]byte(key), buf.Bytes())
+		return tx.Bucket([]byte(bucket)).Put([]byte(key), buf.Bytes())
 	})
 }
 
@@ -112,17 +123,22 @@ func (kvs *KVStore) Put(key string, value interface{}) error {
 //  if err := store.Get("key42", nil); err == nil {
 //      fmt.Println("entry is present")
 //  }
-func (kvs *KVStore) Get(key string, value interface{}) error {
+func (kvs *KVStore) Get(bucket, key string, value interface{}) error {
 	return kvs.db.View(func(tx *bolt.Tx) error {
-		c := tx.Bucket(bucketName).Cursor()
-		if k, v := c.Seek([]byte(key)); k == nil || string(k) != key {
+		c := tx.Bucket([]byte(bucket)).Cursor()
+
+		k, v := c.Seek([]byte(key))
+		if k == nil || string(k) != key {
 			return ErrNotFound
-		} else if value == nil {
-			return nil
-		} else {
-			d := gob.NewDecoder(bytes.NewReader(v))
-			return d.Decode(value)
 		}
+
+		if v == nil {
+			return nil
+		}
+
+		d := gob.NewDecoder(bytes.NewReader(v))
+
+		return d.Decode(value)
 	})
 }
 
@@ -130,9 +146,9 @@ func (kvs *KVStore) Get(key string, value interface{}) error {
 // it returns ErrNotFound.
 //
 //	store.Delete("key42")
-func (kvs *KVStore) Delete(key string) error {
+func (kvs *KVStore) Delete(bucket, key string) error {
 	return kvs.db.Update(func(tx *bolt.Tx) error {
-		c := tx.Bucket(bucketName).Cursor()
+		c := tx.Bucket([]byte(bucket)).Cursor()
 		if k, _ := c.Seek([]byte(key)); k == nil || string(k) != key {
 			return ErrNotFound
 		} else {
