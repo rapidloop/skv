@@ -84,7 +84,7 @@ func (kvs *KVStore) Put(key string, value interface{}) error {
 	}
 	var buf bytes.Buffer
 	if err := gob.NewEncoder(&buf).Encode(value); err != nil {
-		return nil
+		return err
 	}
 	return kvs.db.Update(func(tx *bolt.Tx) error {
 		return tx.Bucket(bucketName).Put([]byte(key), buf.Bytes())
