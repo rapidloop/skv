@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"encoding/gob"
 	"errors"
+	"reflect"
 	"time"
 
 	"github.com/boltdb/bolt"
