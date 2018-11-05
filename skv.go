@@ -141,6 +141,23 @@ func (kvs *KVStore) Delete(key string) error {
 	})
 }
 
+// List all entry values from the store. In case of there are not entries, it will return nil.
+func (kvs *KVStore) List(ty reflect.Type) (map[string]interface{}, error) {
+	output := make(map[string]interface{})
+	err := kvs.db.View(func(tx *bolt.Tx) error {
+		c := tx.Bucket(bucketName).Cursor()
+		for k, v := c.First(); k != nil; k, v = c.Next() {
+			value := reflect.New(ty)
+			vl := value.Interface()
+			d := gob.NewDecoder(bytes.NewReader(v))
+			d.Decode(vl)
+			output[string(k)] = vl
+		}
+		return nil
+	})
+	return output, err
+}
+
 // Close closes the key-value store file.
 func (kvs *KVStore) Close() error {
 	return kvs.db.Close()
