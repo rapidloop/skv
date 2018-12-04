@@ -145,18 +145,17 @@ func (kvs *KVStore) Delete(key string) error {
 // If no keys are found, return an empty slice.
 //
 //	store.GetKeys()
-func (kvs *KVStore) GetKeys() ([][]byte, error) {
-	var kl [][]byte
+func (kvs *KVStore) GetKeys() ([]string, error) {
+	var kl []string
 
 	err := kvs.db.View(func(tx *bolt.Tx) error {
 		var err error
 		b := tx.Bucket(bucketName)
 
 		err = b.ForEach(func(k, v []byte) error {
-			kopie := make([]byte, len(k))
-			copy(kopie, k)
-			kl = append(kl, kopie)
-			return nil
+			//copy(kopie, k)
+			kl = append(kl, string(k))
+			return err
 		})
 		return err
 	})
