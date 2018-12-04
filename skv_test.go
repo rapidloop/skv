@@ -131,6 +131,26 @@ func testGetPut(t *testing.T, inval interface{}, outval interface{}) {
 	}
 }
 
+func TestGetKeys(t *testing.T) {
+	os.Remove("skv-test.db")
+	db, err := Open("skv-test.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if l, err := db.GetKeys(); err != nil || len(l) != 0 {
+		t.Fatal("GetKey slice should be empty")
+	}
+	if err := db.Put("test.key", "TESTVALUE"); err != nil {
+		t.Fatal(err)
+	}
+	if l, err := db.GetKeys(); err != nil || len(l) != 1 {
+		t.Fatal("GetKey slice should contain one key")
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestNil(t *testing.T) {
 	os.Remove("skv-test.db")
 	db, err := Open("skv-test.db")
