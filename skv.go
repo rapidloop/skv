@@ -141,6 +141,28 @@ func (kvs *KVStore) Delete(key string) error {
 	})
 }
 
+// Iterate over all existing keys and return a slice of the keys.
+// If no keys are found, return an empty slice.
+//
+//	store.GetKeys()
+func (kvs *KVStore) GetKeys() ([][]byte, error) {
+	var kl [][]byte
+
+	err := kvs.db.View(func(tx *bolt.Tx) error {
+		var err error
+		b := tx.Bucket(bucketName)
+
+		err = b.ForEach(func(k, v []byte) error {
+			kopie := make([]byte, len(k))
+			copy(kopie, k)
+			kl = append(kl, kopie)
+			return nil
+		})
+		return err
+	})
+	return kl, err
+}
+
 // Close closes the key-value store file.
 func (kvs *KVStore) Close() error {
 	return kvs.db.Close()
