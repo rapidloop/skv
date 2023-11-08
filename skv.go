@@ -171,8 +171,31 @@ func (kvs *KVStore[T]) GetKeys() ([]string, error) {
 		b := tx.Bucket(bucketName)
 
 		err = b.ForEach(func(k, v []byte) error {
-			//copy(kopie, k)
 			kl = append(kl, string(k))
+			return err
+		})
+		return err
+	})
+	return kl, err
+}
+
+// Returns all items.
+// If no items are found, return an empty slice.
+//
+//	store.GetAll()
+func (kvs *KVStore[T]) GetAll() ([]T, error) {
+	var kl []T
+
+	err := kvs.db.View(func(tx *bbolt.Tx) error {
+		var err error
+		b := tx.Bucket(bucketName)
+
+		err = b.ForEach(func(k, v []byte) error {
+			entry := new(T)
+			d := gob.NewDecoder(bytes.NewReader(v))
+			d.Decode(entry)
+
+			kl = append(kl, *entry)
 			return err
 		})
 		return err
