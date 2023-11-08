@@ -20,13 +20,13 @@ import (
 	"errors"
 	"time"
 
-	"github.com/boltdb/bolt"
+	"go.etcd.io/bbolt"
 )
 
 // KVStore represents the key value store. Use the Open() method to create
 // one, and Close() it when done.
-type KVStore struct {
-	db *bolt.DB
+type KVStore[T any] struct {
+	db *bbolt.DB
 }
 
 var (
@@ -48,21 +48,21 @@ var (
 // Because of BoltDB restrictions, only one process may open the file at a
 // time. Attempts to open the file from another process will fail with a
 // timeout error.
-func Open(path string) (*KVStore, error) {
-	opts := &bolt.Options{
+func Open[T any](path string) (*KVStore[T], error) {
+	opts := &bbolt.Options{
 		Timeout: 50 * time.Millisecond,
 	}
-	if db, err := bolt.Open(path, 0640, opts); err != nil {
+	if db, err := bbolt.Open(path, 0640, opts); err != nil {
 		return nil, err
 	} else {
-		err := db.Update(func(tx *bolt.Tx) error {
+		err := db.Update(func(tx *bbolt.Tx) error {
 			_, err := tx.CreateBucketIfNotExists(bucketName)
 			return err
 		})
 		if err != nil {
 			return nil, err
 		} else {
-			return &KVStore{db: db}, nil
+			return &KVStore[T]{db: db}, nil
 		}
 	}
 }
@@ -78,15 +78,12 @@ func Open(path string) (*KVStore, error) {
 //	    "emma":  101,
 //	}
 //	err := store.Put("key43", m)
-func (kvs *KVStore) Put(key string, value interface{}) error {
-	if value == nil {
-		return ErrBadValue
-	}
+func (kvs *KVStore[T]) Put(key string, value T) error {
 	var buf bytes.Buffer
 	if err := gob.NewEncoder(&buf).Encode(value); err != nil {
 		return err
 	}
-	return kvs.db.Update(func(tx *bolt.Tx) error {
+	return kvs.db.Update(func(tx *bbolt.Tx) error {
 		return tx.Bucket(bucketName).Put([]byte(key), buf.Bytes())
 	})
 }
@@ -109,29 +106,50 @@ func (kvs *KVStore) Put(key string, value interface{}) error {
 // The value passed to Get() can be nil, in which case any value read from
 // the store is silently discarded.
 //
-//  if err := store.Get("key42", nil); err == nil {
-//      fmt.Println("entry is present")
-//  }
-func (kvs *KVStore) Get(key string, value interface{}) error {
-	return kvs.db.View(func(tx *bolt.Tx) error {
+//	if err := store.Get("key42", nil); err == nil {
+//	    fmt.Println("entry is present")
+//	}
+func (kvs *KVStore[T]) Get(key string) (T, error) {
+	output := new(T)
+
+	err := kvs.db.View(func(tx *bbolt.Tx) error {
 		c := tx.Bucket(bucketName).Cursor()
 		if k, v := c.Seek([]byte(key)); k == nil || string(k) != key {
 			return ErrNotFound
-		} else if value == nil {
-			return nil
 		} else {
 			d := gob.NewDecoder(bytes.NewReader(v))
-			return d.Decode(value)
+			d.Decode(output)
+			return nil
 		}
 	})
+	return *output, err
+}
+
+func (kvs *KVStore[T]) GetWithPrefix(p string) ([]T, error) {
+	output := make([]T, 0)
+	kvs.db.View(func(tx *bbolt.Tx) error {
+		// Assume bucket exists and has keys
+		c := tx.Bucket([]byte(bucketName)).Cursor()
+
+		prefix := []byte(p)
+		for k, v := c.Seek(prefix); k != nil && bytes.HasPrefix(k, prefix); k, v = c.Next() {
+			entry := new(T)
+			d := gob.NewDecoder(bytes.NewReader(v))
+			d.Decode(entry)
+			output = append(output, *entry)
+		}
+
+		return nil
+	})
+	return output, nil
 }
 
 // Delete the entry with the given key. If no such key is present in the store,
 // it returns ErrNotFound.
 //
 //	store.Delete("key42")
-func (kvs *KVStore) Delete(key string) error {
-	return kvs.db.Update(func(tx *bolt.Tx) error {
+func (kvs *KVStore[T]) Delete(key string) error {
+	return kvs.db.Update(func(tx *bbolt.Tx) error {
 		c := tx.Bucket(bucketName).Cursor()
 		if k, _ := c.Seek([]byte(key)); k == nil || string(k) != key {
 			return ErrNotFound
@@ -141,7 +159,28 @@ func (kvs *KVStore) Delete(key string) error {
 	})
 }
 
+// Iterate over all existing keys and return a slice of the keys.
+// If no keys are found, return an empty slice.
+//
+//	store.GetKeys()
+func (kvs *KVStore[T]) GetKeys() ([]string, error) {
+	var kl []string
+
+	err := kvs.db.View(func(tx *bbolt.Tx) error {
+		var err error
+		b := tx.Bucket(bucketName)
+
+		err = b.ForEach(func(k, v []byte) error {
+			//copy(kopie, k)
+			kl = append(kl, string(k))
+			return err
+		})
+		return err
+	})
+	return kl, err
+}
+
 // Close closes the key-value store file.
-func (kvs *KVStore) Close() error {
+func (kvs *KVStore[T]) Close() error {
 	return kvs.db.Close()
 }

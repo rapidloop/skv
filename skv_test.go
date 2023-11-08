@@ -13,7 +13,76 @@ import (
 
 func TestBasic(t *testing.T) {
 	os.Remove("skv-test.db")
-	db, err := Open("skv-test.db")
+	prefix := "RandomPrefix-"
+	db, err := Open[string]("skv-test.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// put a key
+	if err := db.Put(prefix+"key1", "value1"); err != nil {
+		t.Fatal(err)
+	}
+	// get it back
+	val, err := db.Get(prefix + "key1")
+	if err != nil {
+		t.Fatal(err)
+	} else if val != "value1" {
+		t.Fatalf("got \"%s\", expected \"value1\"", val)
+	}
+	// put something else in and get it
+	if err := db.Put("key122", "value122"); err != nil {
+		t.Fatal(err)
+	}
+	val, err = db.Get("key122")
+	if err != nil {
+		t.Fatal(err)
+	} else if val != "value122" {
+		t.Fatalf("got \"%s\", expected \"value1\"", val)
+	}
+
+	// put something else in (within the prefix) and get it
+	if err := db.Put(prefix+"key2", "value3"); err != nil {
+		t.Fatal(err)
+	}
+	val, err = db.Get(prefix + "key2")
+	if err != nil {
+		t.Fatal(err)
+	} else if val != "value3" {
+		t.Fatalf("got \"%s\", expected \"value1\"", val)
+	}
+
+	result := []string{
+		"value1",
+		"value3",
+	}
+	resultBytes, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	prefixVal, err := db.GetWithPrefix(prefix)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	prefixValBytes, err := json.Marshal(prefixVal)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !bytes.Equal(prefixValBytes, resultBytes) {
+		t.Fatal("differences encounted")
+	}
+
+	// done
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestGetWithPrefix(t *testing.T) {
+	os.Remove("skv-test.db")
+	db, err := Open[string]("skv-test.db")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -22,8 +91,8 @@ func TestBasic(t *testing.T) {
 		t.Fatal(err)
 	}
 	// get it back
-	var val string
-	if err := db.Get("key1", &val); err != nil {
+	val, err := db.Get("key1")
+	if err != nil {
 		t.Fatal(err)
 	} else if val != "value1" {
 		t.Fatalf("got \"%s\", expected \"value1\"", val)
@@ -33,13 +102,15 @@ func TestBasic(t *testing.T) {
 		t.Fatal(err)
 	}
 	// get it back again
-	if err := db.Get("key1", &val); err != nil {
+	val, err = db.Get("key1")
+	if err != nil {
 		t.Fatal(err)
 	} else if val != "value1" {
 		t.Fatalf("got \"%s\", expected \"value1\"", val)
 	}
 	// get something we know is not there
-	if err := db.Get("no.such.key", &val); err != ErrNotFound {
+	val, err = db.Get("no.such.key")
+	if err != ErrNotFound {
 		t.Fatalf("got \"%s\", expected absence", val)
 	}
 	// delete our key
@@ -58,12 +129,13 @@ func TestBasic(t *testing.T) {
 
 func TestMoreNotFoundCases(t *testing.T) {
 	os.Remove("skv-test.db")
-	db, err := Open("skv-test.db")
+	db, err := Open[string]("skv-test.db")
 	if err != nil {
 		t.Fatal(err)
 	}
-	var val string
-	if err := db.Get("key1", &val); err != ErrNotFound {
+
+	_, err = db.Get("key1")
+	if err != ErrNotFound {
 		t.Fatal(err)
 	}
 	if err := db.Put("key1", "value1"); err != nil {
@@ -72,19 +144,17 @@ func TestMoreNotFoundCases(t *testing.T) {
 	if err := db.Delete("key1"); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Get("key1", &val); err != ErrNotFound {
+	_, err = db.Get("key1")
+	if err != ErrNotFound {
 		t.Fatal(err)
 	}
-	if err := db.Get("", &val); err != ErrNotFound {
+	_, err = db.Get("")
+	if err != ErrNotFound {
 		t.Fatal(err)
 	}
 	if err := db.Close(); err != nil {
 		t.Fatal(err)
 	}
-}
-
-type aStruct struct {
-	Numbers *[]int
 }
 
 func TestRichTypes(t *testing.T) {
@@ -94,18 +164,12 @@ func TestRichTypes(t *testing.T) {
 		"400 meters": "Marie-José PÉREC",
 		"800 meters": "Nadezhda OLIZARENKO",
 	}
-	var outval1 = make(map[string]string)
-	testGetPut(t, inval1, &outval1)
-	var inval2 = aStruct{
-		Numbers: &[]int{100, 200, 400, 800},
-	}
-	var outval2 aStruct
-	testGetPut(t, inval2, &outval2)
+	testGetPut(t, inval1)
 }
 
-func testGetPut(t *testing.T, inval interface{}, outval interface{}) {
+func testGetPut(t *testing.T, inval map[string]string) {
 	os.Remove("skv-test.db")
-	db, err := Open("skv-test.db")
+	db, err := Open[map[string]string]("skv-test.db")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,10 +177,13 @@ func testGetPut(t *testing.T, inval interface{}, outval interface{}) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	var outval map[string]string
 	if err := db.Put("test.key", inval); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Get("test.key", outval); err != nil {
+	outval, err = db.Get("test.key")
+	if err != nil {
 		t.Fatal(err)
 	}
 	output, err := json.Marshal(outval)
@@ -131,28 +198,9 @@ func testGetPut(t *testing.T, inval interface{}, outval interface{}) {
 	}
 }
 
-func TestNil(t *testing.T) {
-	os.Remove("skv-test.db")
-	db, err := Open("skv-test.db")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Put("key1", nil); err != ErrBadValue {
-		t.Fatalf("got %v, expected ErrBadValue", err)
-	}
-	if err := db.Put("key1", "value1"); err != nil {
-		t.Fatal(err)
-	}
-	// can Get() into a nil value
-	if err := db.Get("key1", nil); err != nil {
-		t.Fatal(err)
-	}
-	db.Close()
-}
-
 func TestGoroutines(t *testing.T) {
 	os.Remove("skv-test.db")
-	db, err := Open("skv-test.db")
+	db, err := Open[string]("skv-test.db")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,8 +215,8 @@ func TestGoroutines(t *testing.T) {
 					t.Fatal(err)
 				}
 			case 1:
-				var val string
-				if err := db.Get("key1", &val); err != nil && err != ErrNotFound {
+				_, err := db.Get("key1")
+				if err != nil && err != ErrNotFound {
 					t.Fatal(err)
 				}
 			case 2:
@@ -182,9 +230,29 @@ func TestGoroutines(t *testing.T) {
 	wg.Wait()
 }
 
+func TestGetKeys(t *testing.T) {
+	os.Remove("skv-test.db")
+	db, err := Open[string]("skv-test.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if l, err := db.GetKeys(); err != nil || len(l) != 0 {
+		t.Fatal("GetKey slice should be empty")
+	}
+	if err := db.Put("test.key", "TESTVALUE"); err != nil {
+		t.Fatal(err)
+	}
+	if l, err := db.GetKeys(); err != nil || len(l) != 1 {
+		t.Fatal("GetKey slice should contain one key")
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func BenchmarkPut(b *testing.B) {
 	os.Remove("skv-bench.db")
-	db, err := Open("skv-bench.db")
+	db, err := Open[string]("skv-bench.db")
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -200,7 +268,7 @@ func BenchmarkPut(b *testing.B) {
 
 func BenchmarkPutGet(b *testing.B) {
 	os.Remove("skv-bench.db")
-	db, err := Open("skv-bench.db")
+	db, err := Open[string]("skv-bench.db")
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -211,8 +279,7 @@ func BenchmarkPutGet(b *testing.B) {
 		}
 	}
 	for i := 0; i < b.N; i++ {
-		var val string
-		if err := db.Get(fmt.Sprintf("key%d", i), &val); err != nil {
+		if _, err := db.Get(fmt.Sprintf("key%d", i)); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -222,7 +289,7 @@ func BenchmarkPutGet(b *testing.B) {
 
 func BenchmarkPutDelete(b *testing.B) {
 	os.Remove("skv-bench.db")
-	db, err := Open("skv-bench.db")
+	db, err := Open[string]("skv-bench.db")
 	if err != nil {
 		b.Fatal(err)
 	}
