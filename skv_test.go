@@ -194,6 +194,51 @@ func testGetPut(t *testing.T, inval map[string]string) {
 	}
 }
 
+func TestPutWithTTLAndTags(t *testing.T) {
+	os.RemoveAll("skv-test.db")
+	db, err := Open[string]("skv-test.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.PutWithTTL("test.key", "val1", 60*time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.PutWithTags("test.tags", "val2", []string{"tags"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.PutWithTagsAndTTL("test.ttl.tags", "val4", 60*time.Minute, []string{"tags"}); err != nil {
+		t.Fatal(err)
+	}
+	val, err := db.GetWithTag("tags")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(val) != 2 {
+		t.Fatalf("got \"%d\", expected \"2\"", len(val))
+	}
+	// check get with no tags
+	val, err = db.GetWithTag("dont_exist")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(val) != 0 {
+		t.Fatalf("We shouldnt have any results")
+	}
+
+	// delete a key and see what happens
+	db.Delete("test.tags")
+	val, err = db.GetWithTag("tags")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(val) != 1 {
+		t.Fatalf("got \"%d\", expected \"2\"", len(val))
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestGoroutines(t *testing.T) {
 	os.RemoveAll("skv-test.db")
 	db, err := Open[string]("skv-test.db")

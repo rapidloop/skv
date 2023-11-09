@@ -18,10 +18,15 @@ import (
 	"bytes"
 	"encoding/gob"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
 	"git.mills.io/prologic/bitcask"
+)
+
+const (
+	CacheTagPattern = "db_tag_%s"
 )
 
 // KVStore represents the key value store. Use the Open() method to create
@@ -88,6 +93,70 @@ func (kvs *KVStore[T]) PutWithTTL(key string, value T, ttl time.Duration) error 
 	return kvs.db.PutWithTTL([]byte(key), buf.Bytes(), ttl)
 }
 
+func (kvs *KVStore[T]) PutWithTags(key string, value T, tags []string) error {
+	var buf bytes.Buffer
+	if err := gob.NewEncoder(&buf).Encode(value); err != nil {
+		return err
+	}
+	err := kvs.db.Put([]byte(key), buf.Bytes())
+	if err != nil {
+		return err
+	}
+	return kvs.saveTags(key, tags)
+}
+
+// Put an entry into the store with a TTL to expire the entry
+func (kvs *KVStore[T]) PutWithTagsAndTTL(key string, value T, ttl time.Duration, tags []string) error {
+	var buf bytes.Buffer
+	if err := gob.NewEncoder(&buf).Encode(value); err != nil {
+		return err
+	}
+	err := kvs.db.PutWithTTL([]byte(key), buf.Bytes(), ttl)
+	if err != nil {
+		return err
+	}
+
+	return kvs.saveTags(key, tags)
+}
+
+func (kvs *KVStore[T]) saveTags(key string, tags []string) error {
+	// get the tags
+	kvs.mu.Lock()
+	defer kvs.mu.Unlock()
+
+	for _, tag := range tags {
+
+		var cacheKeys map[string]struct{}
+
+		tagKey := []byte(fmt.Sprintf(CacheTagPattern, tag))
+		if result, err := kvs.db.Get(tagKey); err == nil {
+			e := new(map[string]struct{})
+			d := gob.NewDecoder(bytes.NewReader(result))
+			d.Decode(e)
+			cacheKeys = *e
+		}
+
+		if cacheKeys == nil {
+			cacheKeys = make(map[string]struct{})
+		}
+
+		if _, exists := cacheKeys[key]; exists {
+			continue
+		}
+
+		cacheKeys[key] = struct{}{}
+
+		var buf bytes.Buffer
+		if err := gob.NewEncoder(&buf).Encode(cacheKeys); err != nil {
+			return err
+		}
+
+		kvs.db.Put(tagKey, buf.Bytes())
+
+	}
+	return nil
+}
+
 // Get an entry from the store. "value" must be a pointer-typed. If the key
 // is not present in the store, Get returns ErrNotFound.
 //
@@ -140,6 +209,55 @@ func (kvs *KVStore[T]) GetWithPrefix(p string) ([]T, error) {
 		return err
 	})
 	return output, err
+}
+
+func (kvs *KVStore[T]) GetWithTag(tag string) ([]T, error) {
+	output := make([]T, 0)
+	tagKey := []byte(fmt.Sprintf(CacheTagPattern, tag))
+	updateTags := false
+
+	// lock the tags mutex
+	kvs.mu.Lock()
+	defer kvs.mu.Unlock()
+
+	var cacheKeys map[string]struct{}
+	if result, err := kvs.db.Get(tagKey); err == nil {
+		e := new(map[string]struct{})
+		d := gob.NewDecoder(bytes.NewReader(result))
+		d.Decode(e)
+		cacheKeys = *e
+	}
+
+	if cacheKeys == nil {
+		return output, nil
+	}
+
+	for key := range cacheKeys {
+		item, err := kvs.Get(key)
+
+		// key might have expired or deleted
+		if err == ErrNotFound {
+			delete(cacheKeys, key)
+			updateTags = true
+			continue
+		}
+
+		if err != nil {
+			return make([]T, 0), nil
+		}
+		output = append(output, item)
+	}
+
+	if updateTags {
+		var buf bytes.Buffer
+		if err := gob.NewEncoder(&buf).Encode(cacheKeys); err != nil {
+			return make([]T, 0), err
+		}
+
+		kvs.db.Put(tagKey, buf.Bytes())
+	}
+
+	return output, nil
 }
 
 // Delete the entry with the given key. If no such key is present in the store,
