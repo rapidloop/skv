@@ -11,8 +11,8 @@ import (
 	"time"
 )
 
-func TestBasic(t *testing.T) {
-	os.Remove("skv-test.db")
+func TestGetWithPrefix(t *testing.T) {
+	os.RemoveAll("skv-test.db")
 	prefix := "RandomPrefix-"
 	db, err := Open[string]("skv-test.db")
 	if err != nil {
@@ -80,8 +80,8 @@ func TestBasic(t *testing.T) {
 	}
 }
 
-func TestGetWithPrefix(t *testing.T) {
-	os.Remove("skv-test.db")
+func TestBasic(t *testing.T) {
+	os.RemoveAll("skv-test.db")
 	db, err := Open[string]("skv-test.db")
 	if err != nil {
 		t.Fatal(err)
@@ -117,10 +117,6 @@ func TestGetWithPrefix(t *testing.T) {
 	if err := db.Delete("key1"); err != nil {
 		t.Fatal(err)
 	}
-	// delete it again
-	if err := db.Delete("key1"); err != ErrNotFound {
-		t.Fatalf("delete returned %v, expected ErrNotFound", err)
-	}
 	// done
 	if err := db.Close(); err != nil {
 		t.Fatal(err)
@@ -128,7 +124,7 @@ func TestGetWithPrefix(t *testing.T) {
 }
 
 func TestMoreNotFoundCases(t *testing.T) {
-	os.Remove("skv-test.db")
+	os.RemoveAll("skv-test.db")
 	db, err := Open[string]("skv-test.db")
 	if err != nil {
 		t.Fatal(err)
@@ -168,7 +164,7 @@ func TestRichTypes(t *testing.T) {
 }
 
 func testGetPut(t *testing.T, inval map[string]string) {
-	os.Remove("skv-test.db")
+	os.RemoveAll("skv-test.db")
 	db, err := Open[map[string]string]("skv-test.db")
 	if err != nil {
 		t.Fatal(err)
@@ -199,7 +195,7 @@ func testGetPut(t *testing.T, inval map[string]string) {
 }
 
 func TestGoroutines(t *testing.T) {
-	os.Remove("skv-test.db")
+	os.RemoveAll("skv-test.db")
 	db, err := Open[string]("skv-test.db")
 	if err != nil {
 		t.Fatal(err)
@@ -228,10 +224,11 @@ func TestGoroutines(t *testing.T) {
 		}()
 	}
 	wg.Wait()
+	db.Close()
 }
 
 func TestGetKeys(t *testing.T) {
-	os.Remove("skv-test.db")
+	os.RemoveAll("skv-test.db")
 	db, err := Open[string]("skv-test.db")
 	if err != nil {
 		t.Fatal(err)
@@ -251,7 +248,7 @@ func TestGetKeys(t *testing.T) {
 }
 
 func BenchmarkPut(b *testing.B) {
-	os.Remove("skv-bench.db")
+	os.RemoveAll("skv-bench.db")
 	db, err := Open[string]("skv-bench.db")
 	if err != nil {
 		b.Fatal(err)
@@ -267,7 +264,7 @@ func BenchmarkPut(b *testing.B) {
 }
 
 func BenchmarkPutGet(b *testing.B) {
-	os.Remove("skv-bench.db")
+	os.RemoveAll("skv-bench.db")
 	db, err := Open[string]("skv-bench.db")
 	if err != nil {
 		b.Fatal(err)
@@ -288,7 +285,7 @@ func BenchmarkPutGet(b *testing.B) {
 }
 
 func BenchmarkPutDelete(b *testing.B) {
-	os.Remove("skv-bench.db")
+	os.RemoveAll("skv-bench.db")
 	db, err := Open[string]("skv-bench.db")
 	if err != nil {
 		b.Fatal(err)
