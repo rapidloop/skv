@@ -303,6 +303,14 @@ func (kvs *KVStore[T]) GetAll() ([]T, error) {
 }
 
 // Close closes the key-value store file.
+func (kvs *KVStore[T]) Maintenance() {
+	kvs.db.RunGC()
+	kvs.db.Sync()
+	kvs.db.Merge()
+	kvs.db.Sync()
+}
+
+// Close closes the key-value store file.
 func (kvs *KVStore[T]) Close() error {
 	return kvs.db.Close()
 }
